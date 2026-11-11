@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+requests>=2.31
+kafka-python>=2.0.2
+# HBase Thrift client - needed on the cluster (optional for offline/snapshot mode)
+happybase>=1.2.0; python_version < "3.13"

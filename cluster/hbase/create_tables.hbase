@@ -1,0 +1,16 @@
+# GraphPulse serving-layer schema.  Run:  hbase shell -n cluster/hbase/create_tables.hbase
+#
+# gp_users  row = user id
+#   m: batch metrics (pagerank, influence, community, clustering, suspicion ...)
+#   n: adjacency lists (out = who the user follows, in = followers)  -> used for live BFS path search
+#   r: friend recommendations (JSON)
+#   s: streaming counters written by Spark Structured Streaming (atomic HBase counters)
+# Pre-split on the leading digit of the id so regions are spread across BOTH RegionServers.
+
+create 'gp_users', {NAME => 'm', VERSIONS => 1}, {NAME => 'n', VERSIONS => 1}, {NAME => 'r', VERSIONS => 1}, {NAME => 's', VERSIONS => 1}, SPLITS => ['2', '4', '6', '8']
+create 'gp_communities', {NAME => 'c', VERSIONS => 1}
+create 'gp_meta', {NAME => 'd', VERSIONS => 3}
+create 'gp_alerts', {NAME => 'a', VERSIONS => 1, TTL => 604800}
+
+list
+exit

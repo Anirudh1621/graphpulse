@@ -1,0 +1,10 @@
+# Shell scripts and configs run on Linux nodes - never convert to CRLF (breaks bash on Ubuntu)
+* text=auto
+*.sh text eol=lf
+*.hbase text eol=lf
+*.xml text eol=lf
+*.properties text eol=lf
+*.template text eol=lf
+*.conf text eol=lf
+cluster/config/hadoop/workers text eol=lf
+cluster/config/hbase/regionservers text eol=lf
