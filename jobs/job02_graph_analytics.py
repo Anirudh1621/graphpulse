@@ -31,10 +31,15 @@ from common import Paths, get_spark, job_run, log
 ALL = Window.orderBy  # shorthand: global (un-partitioned) window, fine for ~10^5-10^6 users
 
 
-def timed(metrics, name, df):
-    """Materialise a cached DataFrame and record how long the algorithm took."""
+def timed(metrics, name, build):
+    """Run one algorithm, cache its result, and record how long it really took.
+
+    `build` is a function that returns the result DataFrame. It is called inside the timer on purpose:
+    pageRank, connectedComponents, labelPropagation, shortestPaths and the MLlib fit() calls do their
+    work as soon as they are called, so a DataFrame built before the timer starts would hide that work.
+    """
     t = time.time()
-    df = df.cache()
+    df = build().cache()
     df.count()
     metrics.setdefault("algorithm_seconds", {})[name] = round(time.time() - t, 2)
     log(f"{name:<22} {metrics['algorithm_seconds'][name]:>8.2f}s")
@@ -107,21 +112,22 @@ def main():
 
         # ---- degrees & reciprocity
         und = e.select("src", "dst").union(e.select(F.col("dst").alias("src"), F.col("src").alias("dst"))).distinct()
-        deg = timed(m, "degrees", v.join(g.inDegrees, "id", "left").join(g.outDegrees, "id", "left")
+        deg = timed(m, "degrees", lambda: v.join(g.inDegrees, "id", "left").join(g.outDegrees, "id", "left")
                     .join(und.groupBy(F.col("src").alias("id")).agg(F.count("*").alias("neighbors")), "id", "left")
                     .join(e.groupBy(F.col("src").alias("id")).agg(F.sum(F.col("mutual").cast("int")).alias("mutual_out")),
                           "id", "left")
                     .fillna(0, subset=["inDegree", "outDegree", "neighbors", "mutual_out"]))
 
         # ---- GraphFrames algorithms
-        pr = timed(m, "pagerank", g.pageRank(resetProbability=0.15, maxIter=args.pr_iter).vertices.select("id", "pagerank"))
-        cc = timed(m, "connected_components", g.connectedComponents().select("id", "component"))
-        lpa = timed(m, "label_propagation", g.labelPropagation(maxIter=args.lpa_iter)
+        pr = timed(m, "pagerank", lambda: g.pageRank(resetProbability=0.15, maxIter=args.pr_iter)
+                   .vertices.select("id", "pagerank"))
+        cc = timed(m, "connected_components", lambda: g.connectedComponents().select("id", "component"))
+        lpa = timed(m, "label_propagation", lambda: g.labelPropagation(maxIter=args.lpa_iter)
                     .select("id", F.col("label").alias("community")))
-        tri = timed(m, "triangle_count", g.triangleCount().select("id", F.col("count").alias("triangles")))
+        tri = timed(m, "triangle_count", lambda: g.triangleCount().select("id", F.col("count").alias("triangles")))
 
         hubs = [r["id"] for r in pr.orderBy(F.desc("pagerank")).limit(args.hubs).collect()]
-        sp = timed(m, "shortest_paths", g.shortestPaths(landmarks=hubs).select("id", "distances"))
+        sp = timed(m, "shortest_paths", lambda: g.shortestPaths(landmarks=hubs).select("id", "distances"))
 
         # ---- assemble the user table
         users = (deg.join(pr, "id").join(cc, "id").join(lpa, "id").join(tri, "id", "left").join(sp, "id", "left")
@@ -143,7 +149,7 @@ def main():
                  .withColumn("influence_rank", F.row_number().over(ALL(F.desc("influence"), F.desc("pagerank"))))
                  .drop("pr_pct", "in_pct"))
 
-        users = timed(m, "mllib_anomaly_kmeans", anomaly_scores(users, args.kmeans_k))
+        users = timed(m, "mllib_anomaly_kmeans", lambda: anomaly_scores(users, args.kmeans_k))
         users.write.mode("overwrite").parquet(Paths.users)
         users = spark.read.parquet(Paths.users).cache()
 
@@ -172,7 +178,7 @@ def main():
                                                   F.col("cut_edges") / (2 * F.col("internal_edges") + F.col("cut_edges")))
                             .otherwise(1.0))
                 .withColumn("size_rank", F.row_number().over(ALL(F.desc("size"), F.desc("pagerank_mass")))))
-        comm = timed(m, "community_stats", comm)
+        comm = timed(m, "community_stats", lambda: comm)
         comm.write.mode("overwrite").parquet(Paths.communities)
         cut_edges.groupBy("c_src", "c_dst").agg(F.count("*").alias("weight")) \
             .write.mode("overwrite").parquet(Paths.community_links)
@@ -204,9 +210,13 @@ def main():
         csum = comm.agg(F.count("*").alias("n"), F.sum(F.when(F.col("size") >= 3, 1).otherwise(0)).alias("n3"),
                         F.max("size").alias("largest")).first()
         mutual = e.filter("mutual").count()
+        # say where the job really ran, so the dashboard never claims a cluster that was not used
+        master = spark.sparkContext.master
+        where = "on YARN" if master.startswith("yarn") else (
+            "in local mode on one machine" if master.startswith("local") else f"on {master}")
         summary = {
             "dataset": args.dataset_name,
-            "engine": f"Spark {spark.version} + GraphFrames on YARN ({spark.sparkContext.defaultParallelism} cores)",
+            "engine": f"Spark {spark.version} + GraphFrames {where} ({spark.sparkContext.defaultParallelism} cores)",
             "users": n_users, "edges": n_edges,
             "density": n_edges / (n_users * (n_users - 1)) if n_users > 1 else 0,
             "avg_out_degree": float(agg["avg_out"]), "max_in_degree": int(agg["max_in"]),
