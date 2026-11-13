@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useReducer } from 'react'
+import { mergeAlert } from './alerts'
 import { wsUrl } from './api'
 
 const LiveCtx = createContext(null)
@@ -28,10 +29,8 @@ function apply(s, m) {
     case 'rising':
       return { ...s, rising: m.items || [], risingTs: m.ts || Date.now() / 1000 }
     case 'alert': {
-      // one row per offending account; sliding windows re-fire while the burst lasts
-      const prev = s.alerts.find((a) => a.src === m.src)
-      const windows = new Set([...(prev?.windows || []), m.window_start])
-      const merged = { ...m, windows: [...windows], peak: Math.max(m.follows, prev?.peak || 0) }
+      // one row per offending account (see mergeAlert)
+      const merged = mergeAlert(s.alerts.find((a) => a.src === m.src), m)
       return { ...s, alerts: [merged, ...s.alerts.filter((a) => a.src !== m.src)].slice(0, 60) }
     }
     case 'scenario':

@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { CartesianGrid, Cell, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { Bar, Card, Loading, UserChip } from '../components/ui'
+import { mergeAlert } from '../lib/alerts'
 import { useApi } from '../lib/api'
 import { useLive } from '../lib/live'
 import { alias, fmt, suspColor } from '../lib/util'
@@ -25,14 +26,9 @@ export default function Threats() {
   })), [sus.data, lb.data])
 
   const alerts = useMemo(() => {
-    // group by account: newest window first, keep peak burst size and number of windows flagged
+    // one row per account, from the live feed plus the alerts stored in HBase (see mergeAlert); newest first
     const m = new Map()
-    ;[...live.alerts, ...(stored.data || [])].forEach((a) => {
-      const cur = m.get(a.src)
-      const windows = new Set([...(cur?.windows || []), ...(a.windows || [a.window_start])])
-      const newest = !cur || a.window_start > cur.window_start ? a : cur
-      m.set(a.src, { ...newest, windows: [...windows], peak: Math.max(a.peak || a.follows, cur?.peak || 0) })
-    })
+    ;[...live.alerts, ...(stored.data || [])].forEach((a) => m.set(a.src, mergeAlert(m.get(a.src), a)))
     return [...m.values()].sort((a, b) => b.window_start - a.window_start).slice(0, 30)
   }, [live.alerts, stored.data])
 
