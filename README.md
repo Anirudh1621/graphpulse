@@ -49,6 +49,7 @@ flowchart LR
 | **People You May Know** | Top-10 recommendations per user, each explained ("because you follow …") | **Motif finding** `(a)-[]->(b); (b)-[]->(c)` + Adamic-Adar scoring |
 | **Recommender evaluation** | precision@10 / recall@10 / hit-rate on 5% held-out edges vs a popularity baseline | Train/test split in Spark |
 | **Fake-account detection (batch)** | Suspicion score 0–100, with human-readable reasons | MLlib `StandardScaler` + `KMeans` distance-to-centroid + rules |
+| **Detector evaluation** | 250 planted bots of 5 kinds: 75% caught, AUC 0.994, and one blind spot (follow-back farms). See [docs/BOT_DETECTION_EVAL.md](docs/BOT_DETECTION_EVAL.md) | `tools/plant_bots.py` + `jobs/eval_bot_detection.py` |
 | **Real-time threat radar** | Follow-spam bursts detected within seconds, enriched with the batch suspicion score | Structured Streaming sliding windows + watermark + **stream-static join** |
 | **Rising stars** | Accounts gaining followers fastest right now | 2-min sliding window, 10 s slide |
 | **Live counters** | "Followers (live)" = batch value + streaming delta | Atomic **HBase counters** from `foreachBatch` |
@@ -75,13 +76,15 @@ jobs/
   job03_recommendations.py     motif-based Adamic-Adar recommender + offline evaluation
   job04_publish_serving.py     distributed writes to HBase (+ optional JSON snapshot)
   stream_graph_events.py       5 Structured Streaming queries (lake, throughput, rising, threats, counters)
+  eval_bot_detection.py        scores the suspicion score against planted bots (docs/BOT_DETECTION_EVAL.md)
 producer/          Kafka event generator (baseline / viral / bot scenarios)
 api/               FastAPI service (HBase + Kafka, falls back to snapshot/simulation)
 ui/                React dashboard
 scripts/           download_data, run_pipeline, run_stream, run_api, benchmark_scaling
 tools/             make_demo_snapshot.py: synthetic offline dataset for development
+                   plant_bots.py: hides labelled fake bots in a real graph, to test the detector
 demo-snapshot/     pre-built synthetic snapshot (offline demo / UI development)
-docs/              CLUSTER_SETUP.md, COMMANDS.md, DEMO_SCRIPT.md
+docs/              CLUSTER_SETUP.md, CLOUD_SETUP.md, COMMANDS.md, DEMO_SCRIPT.md, BOT_DETECTION_EVAL.md
 ```
 
 ## Quick start
