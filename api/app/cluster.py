@@ -61,19 +61,25 @@ def _kafka():
     from kafka import KafkaAdminClient
 
     admin = KafkaAdminClient(bootstrap_servers=config.KAFKA.split(","), request_timeout_ms=3000)
+    # kafka-python 3.x renamed the fields it returns (2.x name -> 3.x name):
+    #   broker node_id -> broker_id, topic -> name, partition replicas -> replica_nodes
     try:
         try:
             cl = admin.describe_cluster()
-            brokers = [{"id": b["node_id"], "host": b["host"]} for b in cl.get("brokers", [])]
+            brokers = [{"id": b.get("broker_id", b.get("node_id")), "host": b["host"]} for b in cl.get("brokers", [])]
             controller = cl.get("controller_id")
         except AttributeError:  # older kafka-python
             brokers = [{"id": b.nodeId, "host": b.host} for b in admin._client.cluster.brokers()]
             controller = None
         topics = admin.describe_topics(["gp-events", "gp-insights"])
+
+        def replicas(t):
+            p = t["partitions"][0] if t["partitions"] else {}
+            return len(p.get("replica_nodes", p.get("replicas")) or [])
+
         return {"brokers": sorted(brokers, key=lambda b: b["id"]), "controller": controller,
-                "topics": [{"name": t["topic"], "partitions": len(t["partitions"]),
-                            "replicas": len(t["partitions"][0]["replicas"]) if t["partitions"] else 0}
-                           for t in topics]}
+                "topics": [{"name": t.get("name", t.get("topic")), "partitions": len(t["partitions"]),
+                            "replicas": replicas(t)} for t in topics]}
     finally:
         admin.close()
 
