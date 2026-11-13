@@ -49,7 +49,7 @@ flowchart LR
 | **People You May Know** | Top-10 recommendations per user, each explained ("because you follow …") | **Motif finding** `(a)-[]->(b); (b)-[]->(c)` + Adamic-Adar scoring |
 | **Recommender evaluation** | precision@10 / recall@10 / hit-rate on 5% held-out edges vs a popularity baseline | Train/test split in Spark |
 | **Fake-account detection (batch)** | Suspicion score 0–100, with human-readable reasons | MLlib `StandardScaler` + `KMeans` distance-to-centroid + rules |
-| **Detector evaluation** | 250 planted bots of 5 kinds: 75% caught, AUC 0.994, and one blind spot (follow-back farms). See [docs/BOT_DETECTION_EVAL.md](docs/BOT_DETECTION_EVAL.md) | `tools/plant_bots.py` + `jobs/eval_bot_detection.py` |
+| **Detector evaluation** | 250 planted bots of 5 kinds: 95–97% caught, AUC 0.997, after fixing the one blind spot the test found (follow-back farms). See [docs/BOT_DETECTION_EVAL.md](docs/BOT_DETECTION_EVAL.md) | `tools/plant_bots.py` + `jobs/eval_bot_detection.py` |
 | **Real-time threat radar** | Follow-spam bursts detected within seconds, enriched with the batch suspicion score | Structured Streaming sliding windows + watermark + **stream-static join** |
 | **Rising stars** | Accounts gaining followers fastest right now | 2-min sliding window, 10 s slide |
 | **Live counters** | "Followers (live)" = batch value + streaming delta | Atomic **HBase counters** from `foreachBatch` |

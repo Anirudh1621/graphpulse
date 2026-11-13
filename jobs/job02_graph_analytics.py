@@ -70,9 +70,14 @@ def anomaly_scores(users, k):
     r1 = (F.col("outDegree") >= 5 * (F.col("inDegree") + 1)) & (F.col("outDegree") >= 20)
     r2 = (F.col("reciprocity") < 0.05) & (F.col("outDegree") >= 20)
     r3 = (F.col("clustering") < 0.01) & (F.col("neighbors") >= 20)
-    # Influencers are statistical outliers too - only outliers that lean bot-like (following > followers) count fully
-    # lean: 0.25 for balanced/popular accounts, ramps to 1.0 when following >= 5x followers
-    lean = F.least(F.lit(1.0), F.greatest(F.lit(0.25), (F.col("outDegree") / (F.col("inDegree") + 1) - 1) / 4))
+    # Influencers are statistical outliers too - only outliers that lean bot-like count fully.
+    # lean: 0.25 for balanced/popular accounts, ramps to 1.0 when following >= 5x followers.
+    # Follow-back farms hide that ratio (many accounts they follow follow them back), so an account that follows
+    # at least as many as follow it AND whose contacts do not know each other (r3) leans bot-like too: real
+    # people's contacts form circles. Influencers' followers are strangers to each other as well, but they stay
+    # protected because they have more followers than follows. See docs/BOT_DETECTION_EVAL.md.
+    ratio_lean = F.least(F.lit(1.0), F.greatest(F.lit(0.25), (F.col("outDegree") / (F.col("inDegree") + 1) - 1) / 4))
+    lean = F.when(r3 & (F.col("outDegree") >= F.col("inDegree")), F.lit(1.0)).otherwise(ratio_lean)
     r4 = (F.col("anomaly_pct") >= 0.98) & (F.col("outDegree") >= 2 * (F.col("inDegree") + 1))
     rule_frac = (r1.cast("int") + r2.cast("int") + r3.cast("int")) / 3.0
     activity = F.least(F.lit(1.0), F.log1p("outDegree") / F.lit(math.log(101)))
