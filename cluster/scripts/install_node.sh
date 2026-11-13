@@ -33,7 +33,8 @@ sudo apt-get install -y openjdk-11-jdk python3 python3-pip python3-venv ssh rsyn
 echo "==> [$ROLE] python packages (needed on ALL nodes: Spark executors run python here)"
 PIP_FLAGS=""
 if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)'; then PIP_FLAGS="--break-system-packages"; fi
-pip3 install $PIP_FLAGS --user "numpy<2" happybase kafka-python requests
+# pandas: pyspark.ml.functions imports it at load time, so job 02 fails without it
+pip3 install $PIP_FLAGS --user "numpy<2" pandas happybase kafka-python requests
 
 echo "==> [$ROLE] downloads -> $DL"
 mkdir -p "$DL"
