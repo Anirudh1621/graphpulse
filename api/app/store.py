@@ -9,6 +9,11 @@ from pathlib import Path
 
 USER_TABLE, META_TABLE, COMM_TABLE, ALERT_TABLE = "gp_users", "gp_meta", "gp_communities", "gp_alerts"
 
+try:  # happybase talks to the HBase Thrift server through thriftpy2
+    from thriftpy2.thrift import TException as _ThriftError
+except ImportError:  # snapshot-only installs have no HBase client
+    _ThriftError = OSError
+
 
 def _decode(v: bytes):
     s = v.decode()
@@ -54,6 +59,18 @@ class HBaseStore(Store):
         if missing:
             raise RuntimeError(f"HBase tables missing: {missing}")
 
+    def _read(self, fn, attempts=3):
+        """Runs fn(connection) for a read. The Thrift server closes connections that sit idle for about a
+        minute; happybase reopens such a connection but still fails that one call, so the first clicks
+        after a pause would show "500 Internal Server Error". Retrying on a fresh connection hides that."""
+        for i in range(attempts):
+            try:
+                with self.pool.connection() as c:
+                    return fn(c)
+            except (_ThriftError, OSError):
+                if i == attempts - 1:
+                    raise
+
     @staticmethod
     def _user_from_row(uid, row):
         doc = {"id": int(uid), "stream": {}}
@@ -75,54 +92,50 @@ class HBaseStore(Store):
             hit = self._cache.get(name)
             if hit and now - hit[0] < ttl:
                 return hit[1]
-        with self.pool.connection() as c:
-            row = c.table(META_TABLE).row(name.encode(), columns=[b"d:json"])
+        row = self._read(lambda c: c.table(META_TABLE).row(name.encode(), columns=[b"d:json"]))
         doc = _decode(row[b"d:json"]) if row else None
         with self._lock:
             self._cache[name] = (now, doc)
         return doc
 
     def get_user(self, uid):
-        with self.pool.connection() as c:
-            row = c.table(USER_TABLE).row(str(uid).encode())
+        row = self._read(lambda c: c.table(USER_TABLE).row(str(uid).encode()))
         return self._user_from_row(uid, row) if row else None
 
     def get_users(self, ids, fields=None):
         cols = [f"m:{f}".encode() for f in fields] if fields else [b"m"]
-        out = {}
-        with self.pool.connection() as c:
-            t = c.table(USER_TABLE)
+
+        def fetch(c):
+            out, t = {}, c.table(USER_TABLE)
             for i in range(0, len(ids), 500):
                 for key, row in t.rows([str(x).encode() for x in ids[i:i + 500]], columns=cols):
                     out[int(key)] = self._user_from_row(key, row)
-        return out
+            return out
+        return self._read(fetch)
 
     def get_adjacency(self, ids):
-        out = {}
-        with self.pool.connection() as c:
-            t = c.table(USER_TABLE)
+        def fetch(c):
+            out, t = {}, c.table(USER_TABLE)
             for i in range(0, len(ids), 500):
                 for key, row in t.rows([str(x).encode() for x in ids[i:i + 500]], columns=[b"n:out", b"n:in"]):
                     out[int(key)] = (_decode(row.get(b"n:out", b"[]")), _decode(row.get(b"n:in", b"[]")))
-        return out
+            return out
+        return self._read(fetch)
 
     def get_community(self, cid):
-        with self.pool.connection() as c:
-            row = c.table(COMM_TABLE).row(str(cid).encode())
+        row = self._read(lambda c: c.table(COMM_TABLE).row(str(cid).encode()))
         return _decode(row[b"c:json"]) if row else None
 
     def search(self, prefix, limit=10):
-        with self.pool.connection() as c:
-            t = c.table(USER_TABLE)
-            return [int(k) for k, _ in t.scan(row_prefix=prefix.encode(), columns=[b"m:influence"], limit=limit)]
+        return self._read(lambda c: [int(k) for k, _ in c.table(USER_TABLE).scan(
+            row_prefix=prefix.encode(), columns=[b"m:influence"], limit=limit)])
 
     def list_runs(self):
-        with self.pool.connection() as c:
-            return [_decode(r[b"d:json"]) for _, r in c.table(META_TABLE).scan(row_prefix=b"run:", columns=[b"d:json"])]
+        return self._read(lambda c: [_decode(r[b"d:json"]) for _, r in c.table(META_TABLE).scan(
+            row_prefix=b"run:", columns=[b"d:json"])])
 
     def list_alerts(self, limit=50):
-        with self.pool.connection() as c:
-            return [_decode(r[b"a:json"]) for _, r in c.table(ALERT_TABLE).scan(limit=limit)]
+        return self._read(lambda c: [_decode(r[b"a:json"]) for _, r in c.table(ALERT_TABLE).scan(limit=limit)])
 
     def add_alert(self, alert):
         key = f"{9999999999 - int(alert['window_start']):010d}:{alert['src']}"

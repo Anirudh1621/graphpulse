@@ -94,6 +94,7 @@ for h in master worker1 worker2; do
 done
 echo "==> master: rebuilding the dashboard (1-2 minutes)"
 cd ~/graphpulse/ui && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent
+if pkill -f 'uvicorn app.main:app'; then echo "==> stopped the running dashboard API, so start runs the new code"; fi
 echo "Prepare done. Now run: ~/graphpulse/cluster/gcp/demo.sh start YOUR_IP"
 EOF
     ;;
