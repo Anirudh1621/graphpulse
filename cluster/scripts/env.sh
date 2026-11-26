@@ -9,7 +9,9 @@ export SPARK_HOME=$BIGDATA_HOME/spark
 export HBASE_HOME=$BIGDATA_HOME/hbase
 export KAFKA_HOME=$BIGDATA_HOME/kafka
 export PYSPARK_PYTHON=python3
-export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$SPARK_HOME/bin:$HBASE_HOME/bin:$KAFKA_HOME/bin
+# Big-data tools go FIRST: on master, Node.js (for the dashboard) also installs a `yarn` command,
+# and Hadoop's `yarn` must win.
+export PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$SPARK_HOME/bin:$HBASE_HOME/bin:$KAFKA_HOME/bin:$PATH
 
 # GraphPulse application settings
 export GP_HDFS_BASE=hdfs://master:9000/graphpulse

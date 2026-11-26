@@ -16,6 +16,13 @@ def _get(url):
     return r.json()
 
 
+def _short(host):
+    """Machine name without the domain. Cloud machines report long names such as
+    worker1.asia-south1-a.c.<project>.internal, but the dashboard knows them as worker1."""
+    host = host or ""
+    return host if host.replace(".", "").isdigit() else host.split(".")[0]
+
+
 def _hdfs():
     st = _get(f"{config.NAMENODE_URL}/jmx?qry=Hadoop:service=NameNode,name=FSNamesystemState")["beans"][0]
     info = _get(f"{config.NAMENODE_URL}/jmx?qry=Hadoop:service=NameNode,name=NameNodeInfo")["beans"][0]
@@ -25,7 +32,7 @@ def _hdfs():
         "capacity_total": st.get("CapacityTotal"), "capacity_used": st.get("CapacityUsed"),
         "files": st.get("FilesTotal"), "blocks": st.get("BlocksTotal"),
         "under_replicated": st.get("UnderReplicatedBlocks"), "version": info.get("SoftwareVersion"),
-        "datanodes": [{"host": k.split(":")[0], "used": v.get("usedSpace"), "capacity": v.get("capacity"),
+        "datanodes": [{"host": _short(k.split(":")[0]), "used": v.get("usedSpace"), "capacity": v.get("capacity"),
                        "blocks": v.get("numBlocks"), "last_contact_s": v.get("lastContact")}
                       for k, v in live.items()],
     }
@@ -41,7 +48,7 @@ def _yarn():
         "apps_completed": cm.get("appsCompleted"), "total_mb": cm.get("totalMB"),
         "allocated_mb": cm.get("allocatedMB"), "total_vcores": cm.get("totalVirtualCores"),
         "allocated_vcores": cm.get("allocatedVirtualCores"), "containers": cm.get("containersAllocated"),
-        "nodes": [{"host": n.get("nodeHostName"), "state": n.get("state"), "containers": n.get("numContainers"),
+        "nodes": [{"host": _short(n.get("nodeHostName")), "state": n.get("state"), "containers": n.get("numContainers"),
                    "used_mb": n.get("usedMemoryMB"), "avail_mb": n.get("availMemoryMB"),
                    "used_vcores": n.get("usedVirtualCores")} for n in nodes],
         "apps": [{"id": a.get("id"), "name": a.get("name"), "state": a.get("state"),
@@ -52,7 +59,7 @@ def _yarn():
 
 def _hbase():
     b = _get(f"{config.HBASE_UI_URL}/jmx?qry=Hadoop:service=HBase,name=Master,sub=Server")["beans"][0]
-    live = [s.split(",")[0] for s in (b.get("tag.liveRegionServers") or "").split(";") if s]
+    live = [_short(s.split(",")[0]) for s in (b.get("tag.liveRegionServers") or "").split(";") if s]
     return {"region_servers": b.get("numRegionServers"), "dead_region_servers": b.get("numDeadRegionServers"),
             "live": live, "avg_load": b.get("averageLoad"), "requests": b.get("clusterRequests")}
 
@@ -66,10 +73,11 @@ def _kafka():
     try:
         try:
             cl = admin.describe_cluster()
-            brokers = [{"id": b.get("broker_id", b.get("node_id")), "host": b["host"]} for b in cl.get("brokers", [])]
+            brokers = [{"id": b.get("broker_id", b.get("node_id")), "host": _short(b["host"])}
+                       for b in cl.get("brokers", [])]
             controller = cl.get("controller_id")
         except AttributeError:  # older kafka-python
-            brokers = [{"id": b.nodeId, "host": b.host} for b in admin._client.cluster.brokers()]
+            brokers = [{"id": b.nodeId, "host": _short(b.host)} for b in admin._client.cluster.brokers()]
             controller = None
         topics = admin.describe_topics(["gp-events", "gp-insights"])
 

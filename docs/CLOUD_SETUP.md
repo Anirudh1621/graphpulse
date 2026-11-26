@@ -6,7 +6,8 @@ Compared with the PC setup, a few things are simpler. You don't set hostnames, e
 
 > **Before you start**
 > - Ask your instructor whether cloud machines count as the "1 master + 2 worker PCs" in the project brief.
-> - Status: written on 13 Nov 2026 and **not yet run end to end**. If a step fails, copy the last ~40 lines of output and send them to the team.
+> - Status: written and first used on 13 Nov 2026. If a step fails, copy the last ~40 lines of output and send them to the team.
+> - Already set up? Go straight to [step 8](#step-8-run-the-demo-any-time) to start a demo with one command.
 
 ## What it costs
 
@@ -160,25 +161,43 @@ The first API start takes a few minutes because it builds the dashboard.
 
 On your laptop, open `http://MASTER_EXTERNAL_IP:8000`, using master's `EXTERNAL_IP` from `gcloud compute instances list`. The Hadoop pages use the same address with their own port: `:9870` (HDFS), `:8088` (YARN), `:16010` (HBase) and `:18080` (Spark history).
 
-*Optional:* the dashboard's Cluster page links to `http://master:9870` and so on. To make those links work from your laptop, add the line `MASTER_EXTERNAL_IP master` to `C:\Windows\System32\drivers\etc\hosts`. Editing that file needs admin rights.
+*Optional:* the dashboard's Cluster page links to `http://master:9870` and so on. The laptop helper in step 8 makes those links work: it adds the line `MASTER_EXTERNAL_IP master` to the laptop's hosts file.
 
-## Step 8: Stop paying when you're done (Cloud Shell)
+## Step 8: Run the demo any time
 
-**Pause.** This keeps all data, and only the disks are billed while paused:
+Steps 2–7 are done once. Everything stays on the machines' disks, so a demo only needs the machines and the services started again: one command to start, one to stop.
 
-```bash
-gcloud compute ssh hadoop@master --command="~/graphpulse/cluster/scripts/stop_all.sh"
-gcloud compute instances stop master worker1 worker2
-```
-
-**Resume:**
+**One-time setup in Cloud Shell.** Run the last two lines again after every code update on GitHub:
 
 ```bash
-gcloud compute instances start master worker1 worker2
-gcloud compute ssh hadoop@master --command="~/graphpulse/cluster/scripts/start_all.sh"
+git clone https://github.com/Anirudh1621/graphpulse ~/graphpulse      # skip if it already exists
+cd ~/graphpulse && git fetch -q && git reset -q --hard origin/main
+cluster/gcp/demo.sh prepare
 ```
 
-After a resume, run step 7's three `nohup` commands again. Master's external IP usually changes after a restart, so check `gcloud compute instances list`.
+`prepare` starts the machines, puts the latest code on all three and rebuilds the dashboard.
+
+**Before each demo** (start 10 minutes early):
+
+1. On your Windows laptop, double-click `cluster\gcp\demo_laptop.cmd` in your copy of the repo. It finds the laptop's public IP and copies the start command to the clipboard.
+2. Paste the command into Cloud Shell: `~/graphpulse/cluster/gcp/demo.sh start YOUR_IP`. It starts the three machines, lets your laptop through the firewall and runs `scripts/demo_up.sh` on master, which starts and checks every part in order. After about 5 minutes it prints **DEMO READY** and **MASTER IP**.
+3. Paste MASTER IP into the laptop window and click **Yes** in the Windows prompt. The helper points the name `master` at that IP and opens the dashboard and the Hadoop pages.
+
+**After the demo:** `~/graphpulse/cluster/gcp/demo.sh stop`
+
+| Command | What it does |
+|---|---|
+| `demo.sh status` | Machine states, master's IP and the daemon table |
+| `demo.sh ssh` | A terminal on master, for `hdfs`, `hbase shell` and the Kafka commands |
+| `demo.sh ip NEW_IP` | The laptop changed network: let its new IP open the pages |
+
+If a line says **FAIL**, its log is in `~/demo-logs` on master. Running `demo.sh start` again is safe: anything already running is left alone.
+
+## Step 9: Stop paying when you're done (Cloud Shell)
+
+**Pause.** `~/graphpulse/cluster/gcp/demo.sh stop` stops every service cleanly, then the machines. All data is kept, and only the disks are billed while paused.
+
+**Resume:** `~/graphpulse/cluster/gcp/demo.sh start YOUR_IP`, as in step 8. Master's external IP usually changes after a restart; the command prints the new one.
 
 **Delete everything for good:**
 
@@ -200,6 +219,6 @@ gcloud compute firewall-rules delete graphpulse-web --quiet
 | `whoami` doesn't print `hadoop` | OS Login is switched on. Run `gcloud compute project-info add-metadata --metadata=enable-oslogin=FALSE` and repeat step 3. If that doesn't help, your account is managed by an organisation (for example a college account): use a personal Gmail account. |
 | `Could not get lock /var/lib/dpkg/lock-frontend` | The machine is still updating itself after its first boot. Wait 2 minutes and run the same command again. |
 | Re-running step 4 says `destination path ... already exists` | The download already worked, so skip `git clone`. On master, run `cd ~/graphpulse` and continue from `install_node.sh`. For a worker, run `ssh -t worker1 "~/graphpulse/cluster/scripts/install_node.sh worker1 && pip3 install --user pandas 'numpy<2'"` (likewise for worker2). |
-| Dashboard doesn't load in your browser | Your laptop's IP changed, for example on a new Wi-Fi network. Run `gcloud compute firewall-rules update graphpulse-web --source-ranges=NEW_IP/32` |
-| Cluster page lists machines under long names like `worker1.asia-south1-a.c.<project>.internal` | Only cosmetic: that's Google's full name for the machine |
+| Dashboard doesn't load in your browser | Your laptop's IP changed, for example on a new Wi-Fi network. Find the new one at <https://api.ipify.org> and run `~/graphpulse/cluster/gcp/demo.sh ip NEW_IP` |
+| `yarn` on master prints a Node.js error | The machines have the old `env.sh`. Run `demo.sh prepare` once, or use `$HADOOP_HOME/bin/yarn` |
 | Anything else | The troubleshooting table in [CLUSTER_SETUP.md](CLUSTER_SETUP.md) applies here too |

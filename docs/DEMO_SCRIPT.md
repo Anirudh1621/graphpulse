@@ -1,6 +1,8 @@
 # Demo script (about 12 minutes) + viva preparation
 
 ## Before the evaluator arrives (30 min earlier)
+Shortcut: `scripts/demo_up.sh` on master does steps 1–3 below and checks every part. On Google Cloud, one command starts the machines too: see [CLOUD_SETUP.md, step 8](CLOUD_SETUP.md#step-8-run-the-demo-any-time).
+
 1. All 3 PCs on the same network, with `/etc/hosts` correct. On master: `cluster/scripts/start_all.sh`, and every daemon should be **UP**.
 2. Run `scripts/run_pipeline.sh` if the HBase tables are empty (check with `get 'gp_meta','summary'`).
 3. Terminal 1: `scripts/run_stream.sh`. Terminal 2: the producer at `--rate 30`. Terminal 3: `scripts/run_api.sh`.
